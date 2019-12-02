@@ -1,9 +1,9 @@
+use anyhow::*;
 use colored::*;
 use reqwest::Url;
-use std::fmt;
+use serde::Deserialize;
 use structopt::StructOpt;
 
-use serde::Deserialize;
 #[derive(Deserialize, Debug, Clone)]
 #[allow(non_snake_case)]
 struct ConsulValue {
@@ -36,48 +36,18 @@ enum Commands {
     },
 }
 
-// annoying error boilerplate
-#[derive(Debug, Clone)]
-pub enum QuaestorError {
-    NotFound,
-    ConsulError,
-}
-
-impl std::fmt::Display for QuaestorError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            QuaestorError::NotFound => f.write_str("NotFound"),
-            QuaestorError::ConsulError => f.write_str("ConsulError"),
-        }
-    }
-}
-impl std::error::Error for QuaestorError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // Generic error, underlying cause isn't tracked.
-        None
-    }
-    fn description(&self) -> &str {
-        match *self {
-            QuaestorError::NotFound => "Key not found",
-            QuaestorError::ConsulError => "Consul failed surprisingly",
-        }
-    }
-}
-
-// end error boilerplate
-
-fn get_json(target: &str) -> Result< ConsulValue, Box<dyn std::error::Error> > {
+fn get_json(target: &str) -> anyhow::Result< ConsulValue > {
     let address = format!("http://localhost:8500/v1/kv/{}", target);
     let url = Url::parse(&address).unwrap();
     let values: Vec<ConsulValue> = reqwest::get(url)?.json()?;
 
     match values.len() {
-        0 => Err(QuaestorError::NotFound.into()),
+        0 => Err(anyhow!("Key not found: {}", target)),
         _ => Ok(values[0].clone()),
     }
 }
 
-fn get(key: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn get(key: &str) -> anyhow::Result<()> {
     match get_json(key) {
         Ok(v) => {
             // println!("{:?}", v);
@@ -89,7 +59,7 @@ fn get(key: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn set(key: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn set(key: &str, value: &str) -> anyhow::Result<()> {
     let address = format!("http://localhost:8500/v1/kv/{}", key);
     let url = Url::parse(&address).unwrap();
 
@@ -110,12 +80,12 @@ fn set(key: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn dir(prefix: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn dir(prefix: &str) -> anyhow::Result<()> {
     println!("dir {}", prefix.blue());
     Ok(())
 }
 
-fn dump() -> Result<(), Box<dyn std::error::Error>> {
+fn dump() -> anyhow::Result<()> {
     Ok(())
 }
 
