@@ -1,4 +1,3 @@
-use anyhow::*;
 use colored::*;
 use reqwest::Url;
 use serde::Deserialize;
@@ -36,23 +35,18 @@ enum Commands {
     },
 }
 
-fn get_json(target: &str) -> anyhow::Result< ConsulValue > {
-    let address = format!("http://localhost:8500/v1/kv/{}", target);
-    let url = Url::parse(&address).unwrap();
-    let values: Vec<ConsulValue> = reqwest::get(url)?.json()?;
-
-    match values.len() {
-        0 => Err(anyhow!("Key not found: {}", target)),
-        _ => Ok(values[0].clone()),
-    }
-}
-
 fn get(key: &str) -> anyhow::Result<()> {
-    match get_json(key) {
+    let address = format!("http://localhost:8500/v1/kv/{}?raw=true", key);
+    let url = Url::parse(&address).unwrap();
+    let result = reqwest::get(url)?.text();
+
+    match result {
         Ok(v) => {
-            // println!("{:?}", v);
-            let bytes = base64::decode(&v.Value).unwrap();
-            println!("{} = {}", key.blue(), std::str::from_utf8(&bytes)?.green());
+            if v.len() > 0 {
+                println!("{} = {}", key.blue(), v.green());
+            } else {
+                println!("{} not found!", key.red());
+            }
         },
         Err(e) => { eprintln!("error: {:?}", e); },
     }
