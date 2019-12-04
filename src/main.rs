@@ -1,6 +1,7 @@
 use colored::*;
 use reqwest::Url;
 use serde::Deserialize;
+use std::collections::HashMap;
 use structopt::StructOpt;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -74,8 +75,55 @@ fn set(key: &str, value: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn dir(prefix: &str) -> anyhow::Result<()> {
-    println!("dir {}", prefix.blue());
+#[derive(Debug)]
+struct KeyPair<'a> {
+    value: Option<&'a str>,
+    child: HashMap<&'a str, KeyPair<'a>>
+}
+
+fn build_entry<'a>() -> KeyPair<'a> {
+    KeyPair {
+        value: None,
+        child: HashMap::new()
+    }
+}
+
+fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
+    let address = format!("http://localhost:8500/v1/kv/{}?recurse=true", prefix);
+    let url = Url::parse(&address).unwrap();
+    let values: Vec<ConsulValue> = reqwest::get(url)?.json()?;
+
+    // let's do this the stupidest possible way.
+    let mut result: KeyPair = build_entry();
+
+    for v in &values {
+        let bytes = base64::decode(&v.Value).unwrap();
+        println!("{} = {}", v.Key.blue(), std::str::from_utf8(&bytes)?.green());
+
+        let mut segments = v.Key.split("/").collect::<Vec<&str>>();
+        segments.reverse();
+
+        let mut current: &mut KeyPair = &mut result;
+
+        while segments.len() > 1 {
+            let level = segments.pop().unwrap();
+            if !current.child.contains_key(level) {
+                let tmp = build_entry();
+                current.child.insert(level, tmp);
+            }
+            // and now my troubles begin
+            let foo = current.child.get(level).unwrap();
+            current = foo;
+            // current = current.child.get(level).unwrap();
+            // next:
+            // make a new keypair
+            // set its value to the last segment
+            // insert it into the child of the current thingie
+        }
+    }
+
+    println!("{:?}", result);
+
     Ok(())
 }
 
@@ -96,7 +144,8 @@ fn main() {
     ::std::process::exit(match res {
         Err(e) => {
             eprintln!("error: {:?}", e);
-            1 },
+            1
+        },
         Ok(_) => 0,
     })
 }

@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0.25"
+base64 = "0.11.0"
 colored = "1.9.0"
 reqwest = "0.9.22"
 serde = "1.0.103"
