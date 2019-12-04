@@ -77,7 +77,7 @@ fn set(key: &str, value: &str) -> anyhow::Result<()> {
 
 #[derive(Debug)]
 struct KeyPair<'a> {
-    value: Option<&'a str>,
+    value: Option<String>,
     child: HashMap<&'a str, KeyPair<'a>>
 }
 
@@ -97,29 +97,28 @@ fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
     let mut result: KeyPair = build_entry();
 
     for v in &values {
-        let bytes = base64::decode(&v.Value).unwrap();
-        println!("{} = {}", v.Key.blue(), std::str::from_utf8(&bytes)?.green());
+        let bytes = match base64::decode(&v.Value) {
+            Err(_) => continue,
+            Ok(b) => b,
+        };
+
+        let decoded = std::str::from_utf8(&bytes)?.to_string();
+        println!("{} = {}", v.Key.blue(), decoded.green());
 
         let mut segments = v.Key.split("/").collect::<Vec<&str>>();
         segments.reverse();
 
-        let mut current: &mut KeyPair = &mut result;
+        let mut current = &mut result;
 
         while segments.len() > 1 {
             let level = segments.pop().unwrap();
-            if !current.child.contains_key(level) {
-                let tmp = build_entry();
-                current.child.insert(level, tmp);
-            }
-            // and now my troubles begin
-            let foo = current.child.get(level).unwrap();
-            current = foo;
-            // current = current.child.get(level).unwrap();
-            // next:
-            // make a new keypair
-            // set its value to the last segment
-            // insert it into the child of the current thingie
+            let tmp = current.child.entry(level).or_insert(build_entry());
+            current = tmp;
         }
+        let mut terminal = build_entry();
+        terminal.value = Some(decoded);
+        current.child.insert(segments.pop().unwrap(), terminal);
+
     }
 
     println!("{:?}", result);
