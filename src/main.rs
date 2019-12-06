@@ -103,7 +103,6 @@ fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
         };
 
         let decoded = std::str::from_utf8(&bytes)?.to_string();
-        println!("{} = {}", v.Key.blue(), decoded.green());
 
         let mut segments = v.Key.split("/").collect::<Vec<&str>>();
         segments.reverse();
@@ -121,9 +120,18 @@ fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
 
     }
 
-    println!("{:?}", result);
-
+    emit_level(&result, 0);
     Ok(())
+}
+
+fn emit_level(item: &KeyPair, level: usize) {
+    for (k, v) in item.child.iter() {
+        match &v.value {
+            Some(val) => println!("{:width$}{}: {}", "", k.blue(), val.green(), width = level * 4),
+            None => println!("{:width$}{}:", "", k, width = level * 4),
+        }
+        emit_level(v, level + 1);
+    }
 }
 
 fn dump() -> anyhow::Result<()> {
