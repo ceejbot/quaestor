@@ -104,10 +104,10 @@ fn remove(key: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Serialize, Debug)]
-enum KeyPair {
-    String(String),
-    Object(HashMap<String, KeyPair>)
+#[derive(Serialize, Debug, Default)]
+struct KeyPair {
+    value: Option<String>,
+    child: HashMap<String, KeyPair>
 }
 
 fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
@@ -116,7 +116,7 @@ fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
     let values: Vec<ConsulValue> = reqwest::get(url)?.json()?;
 
     // let's do this the stupidest possible way.
-    let mut result: HashMap<String, KeyPair> = HashMap::new();
+    let mut result = KeyPair::default();
 
     for v in &values {
         let bytes = match base64::decode(&v.Value) {
@@ -126,36 +126,33 @@ fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
 
         let decoded = std::str::from_utf8(&bytes)?.to_string();
 
-        let mut segments = v.Key.split("/").collect::<Vec<&str>>();
+        let mut segments: Vec<_> = v.Key.split("/").map(str::to_string).collect();
         segments.reverse();
 
         let mut current = &mut result;
 
         while segments.len() > 1 {
             let level = segments.pop().unwrap();
-            let tmp = current.entry(level.to_string()).or_insert(KeyPair::Object(HashMap::new()));
-            current = match tmp {
-                KeyPair::String(_s) => panic!("Got string node at {} but it was not a terminal node", level),
-                KeyPair::Object(v) => v
-            };
+            let tmp = current.child.entry(level).or_insert(KeyPair::default());
+            current = tmp;
         }
-        let terminal = KeyPair::String(decoded);
-        current.insert(segments.pop().unwrap().to_string(), terminal);
+        let terminal = current.child.entry(segments.pop().unwrap()).or_insert(KeyPair::default());
+        terminal.value = Some(decoded);
     }
 
-    emit_level(&result, 0);
+    emit_level(result, -1, "".to_string());
     Ok(())
 }
 
-fn emit_level(item: &HashMap<String, KeyPair>, level: usize) {
-    for (k, v) in item.iter() {
-        match v {
-            KeyPair::String(val) => println!("{:width$}{}: {}", "", k.blue(), val.green(), width = level * 4),
-            KeyPair::Object(next) => {
-                println!("{:width$}{}:", "", k, width = level * 4);
-                emit_level(next, level + 1);
-            },
-        }
+fn emit_level(item: KeyPair, level: i8, key: String) {
+    if let Some(val) = item.value {
+        println!("{:width$}{}: {}", "", key.blue(), val.green(), width = level as usize * 4);
+    } else if key.len() > 0 {
+        println!("{:width$}{}:", "", key, width = level as usize * 4);
+    }
+
+    for (k, v) in item.child.into_iter() {
+        emit_level(v, level + 1, k);
     }
 }
 
