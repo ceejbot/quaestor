@@ -1,6 +1,7 @@
 use colored::*;
 use reqwest::Url;
 use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use structopt::StructOpt;
 
@@ -75,17 +76,10 @@ fn set(key: &str, value: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Debug)]
-struct KeyPair<'a> {
-    value: Option<String>,
-    child: HashMap<&'a str, KeyPair<'a>>
-}
-
-fn build_entry<'a>() -> KeyPair<'a> {
-    KeyPair {
-        value: None,
-        child: HashMap::new()
-    }
+#[derive(Serialize, Debug)]
+enum KeyPair {
+    String(String),
+    Object(HashMap<String, KeyPair>)
 }
 
 fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
@@ -94,7 +88,7 @@ fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
     let values: Vec<ConsulValue> = reqwest::get(url)?.json()?;
 
     // let's do this the stupidest possible way.
-    let mut result: KeyPair = build_entry();
+    let mut result: HashMap<String, KeyPair> = HashMap::new();
 
     for v in &values {
         let bytes = match base64::decode(&v.Value) {
@@ -111,30 +105,67 @@ fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
 
         while segments.len() > 1 {
             let level = segments.pop().unwrap();
-            let tmp = current.child.entry(level).or_insert(build_entry());
-            current = tmp;
+            let tmp = current.entry(level.to_string()).or_insert(KeyPair::Object(HashMap::new()));
+            current = match tmp {
+                KeyPair::String(_s) => panic!("Got string node at {} but it was not a terminal node", level),
+                KeyPair::Object(v) => v
+            };
         }
-        let mut terminal = build_entry();
-        terminal.value = Some(decoded);
-        current.child.insert(segments.pop().unwrap(), terminal);
-
+        let terminal = KeyPair::String(decoded);
+        current.insert(segments.pop().unwrap().to_string(), terminal);
     }
 
     emit_level(&result, 0);
     Ok(())
 }
 
-fn emit_level(item: &KeyPair, level: usize) {
-    for (k, v) in item.child.iter() {
-        match &v.value {
-            Some(val) => println!("{:width$}{}: {}", "", k.blue(), val.green(), width = level * 4),
-            None => println!("{:width$}{}:", "", k, width = level * 4),
+fn emit_level(item: &HashMap<String, KeyPair>, level: usize) {
+    for (k, v) in item.iter() {
+        match v {
+            KeyPair::String(val) => println!("{:width$}{}: {}", "", k.blue(), val.green(), width = level * 4),
+            KeyPair::Object(next) => {
+                println!("{:width$}{}:", "", k, width = level * 4);
+                emit_level(next, level + 1);
+            },
         }
-        emit_level(v, level + 1);
     }
 }
 
 fn dump() -> anyhow::Result<()> {
+    let values: Vec<ConsulValue> = reqwest::get("http://localhost:8500/v1/kv/?recurse=true")?.json()?;
+
+    // copy paste for the very temporary win!
+    let mut result: HashMap<String, KeyPair> = HashMap::new();
+
+    for v in &values {
+        let bytes = match base64::decode(&v.Value) {
+            Err(_) => continue,
+            Ok(b) => b,
+        };
+
+        let decoded = std::str::from_utf8(&bytes)?.to_string();
+
+        let mut segments = v.Key.split("/").collect::<Vec<&str>>();
+        segments.reverse();
+
+        let mut current = &mut result;
+
+        while segments.len() > 1 {
+            let level = segments.pop().unwrap();
+            let tmp = current.entry(level.to_string()).or_insert(KeyPair::Object(HashMap::new()));
+            current = match tmp {
+                KeyPair::String(_s) => panic!("Got string node at {} but it was not a terminal node", level),
+                KeyPair::Object(v) => v
+            };
+        }
+        let terminal = KeyPair::String(decoded);
+        current.insert(segments.pop().unwrap().to_string(), terminal);
+    }
+
+    // now emit as json
+    let json = serde_json::to_string_pretty(&result)?;
+    println!("{}", json);
+
     Ok(())
 }
 
