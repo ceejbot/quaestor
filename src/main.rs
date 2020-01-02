@@ -55,10 +55,10 @@ fn get(key: &str) -> anyhow::Result<()> {
             if v.len() > 0 {
                 println!("{} = {}", key.blue(), v.green());
             } else {
-                println!("{} not found!", key.red());
+                println!("‼️  {} not found!", key.red());
             }
         },
-        Err(e) => { eprintln!("error: {:?}", e); },
+        Err(e) => { eprintln!("‼️ error: {:?}", e); },
     }
     Ok(())
 }
@@ -74,10 +74,10 @@ fn set(key: &str, value: &str) -> anyhow::Result<()> {
 
     match response.error_for_status() {
         Ok(_res) => {
-            println!("{} ➜ {}", key.blue(), value.green());
+            println!("✔️ {} ➜ {}", key.blue(), value.green());
         },
         Err(e) => {
-            println!("failed to set {}! {:?}", key.blue(), e);
+            println!("‼️ failed to set {}! {:?}", key.blue(), e);
         },
     }
 
@@ -85,6 +85,22 @@ fn set(key: &str, value: &str) -> anyhow::Result<()> {
 }
 
 fn remove(key: &str) -> anyhow::Result<()> {
+    let address = format!("http://localhost:8500/v1/kv/{}", key);
+    let url = Url::parse(&address).unwrap();
+
+    let response = reqwest::Client::new()
+        .delete(url)
+        .send()?;
+
+    match response.error_for_status() {
+        Ok(_res) => {
+            println!("✘ {} removed", key.red());
+        },
+        Err(e) => {
+            println!("‼️ failed to remove {}! {:?}", key.blue(), e);
+        },
+    }
+
     Ok(())
 }
 
@@ -181,7 +197,7 @@ fn main() {
 
     ::std::process::exit(match res {
         Err(e) => {
-            eprintln!("error: {:?}", e);
+            eprintln!("‼️ error: {:?}", e);
             1
         },
         Ok(_) => 0,
