@@ -32,8 +32,12 @@ enum Commands {
     Dir {
         prefix: String,
     },
-    #[structopt(help = "quaestor dump\n    emit all values in the database; use with care")]
+    #[structopt(help = "quaestor dump\n    emit all values in the database to json; use with care")]
     Dump {
+    },
+    #[structopt(help = "quaestor import filepath\n    import key/value pairs from a JSON file")]
+    Import {
+        fpath: String
     },
 }
 
@@ -134,9 +138,7 @@ fn emit_level(item: &HashMap<String, KeyPair>, level: usize) {
 fn dump() -> anyhow::Result<()> {
     let values: Vec<ConsulValue> = reqwest::get("http://localhost:8500/v1/kv/?recurse=true")?.json()?;
 
-    // copy paste for the very temporary win!
-    let mut result: HashMap<String, KeyPair> = HashMap::new();
-
+    let mut result: HashMap<String, String> = HashMap::new();
     for v in &values {
         let bytes = match base64::decode(&v.Value) {
             Err(_) => continue,
@@ -144,28 +146,16 @@ fn dump() -> anyhow::Result<()> {
         };
 
         let decoded = std::str::from_utf8(&bytes)?.to_string();
-
-        let mut segments = v.Key.split("/").collect::<Vec<&str>>();
-        segments.reverse();
-
-        let mut current = &mut result;
-
-        while segments.len() > 1 {
-            let level = segments.pop().unwrap();
-            let tmp = current.entry(level.to_string()).or_insert(KeyPair::Object(HashMap::new()));
-            current = match tmp {
-                KeyPair::String(_s) => panic!("Got string node at {} but it was not a terminal node", level),
-                KeyPair::Object(v) => v
-            };
-        }
-        let terminal = KeyPair::String(decoded);
-        current.insert(segments.pop().unwrap().to_string(), terminal);
+        result.insert(v.Key.to_owned(), decoded);
     }
 
-    // now emit as json
     let json = serde_json::to_string_pretty(&result)?;
     println!("{}", json);
 
+    Ok(())
+}
+
+fn import(_fpath: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
@@ -177,6 +167,7 @@ fn main() {
         Commands::Set { key, value  } => set(&key, &value),
         Commands::Dir { prefix } => dir(&prefix),
         Commands::Dump { } => dump(),
+        Commands::Import { fpath } => import(&fpath),
     };
 
     ::std::process::exit(match res {
