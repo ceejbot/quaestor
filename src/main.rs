@@ -1,5 +1,4 @@
 use colored::*;
-use reqwest::Url;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -50,8 +49,7 @@ enum Commands {
 
 fn get(key: &str) -> anyhow::Result<()> {
     let address = format!("http://localhost:8500/v1/kv/{}?raw=true", key);
-    let url = Url::parse(&address).unwrap();
-    let result = reqwest::get(url)?.text();
+    let result = reqwest::get(&address)?.text();
 
     match result {
         Ok(v) => {
@@ -68,10 +66,8 @@ fn get(key: &str) -> anyhow::Result<()> {
 
 fn set(key: &str, value: &str) -> anyhow::Result<()> {
     let address = format!("http://localhost:8500/v1/kv/{}", key);
-    let url = Url::parse(&address).unwrap();
-
     let response = reqwest::Client::new()
-        .put(url)
+        .put(&address)
         .body(String::from(value))
         .send()?;
 
@@ -89,10 +85,8 @@ fn set(key: &str, value: &str) -> anyhow::Result<()> {
 
 fn remove(key: &str) -> anyhow::Result<()> {
     let address = format!("http://localhost:8500/v1/kv/{}", key);
-    let url = Url::parse(&address).unwrap();
-
     let response = reqwest::Client::new()
-        .delete(url)
+        .delete(&address)
         .send()?;
 
     match response.error_for_status() {
@@ -115,8 +109,7 @@ struct KeyPair {
 
 fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
     let address = format!("http://localhost:8500/v1/kv/{}?recurse=true", prefix);
-    let url = Url::parse(&address).unwrap();
-    let values: Vec<ConsulValue> = reqwest::get(url)?.json()?;
+    let values: Vec<ConsulValue> = reqwest::get(&address)?.json()?;
 
     // let's do this the stupidest possible way.
     let mut result = KeyPair::default();
@@ -193,9 +186,8 @@ fn import<R: BufRead>(mut reader: R, fname: String) -> anyhow::Result<()> {
 
     for (key, value) in imports.0 {
         let address = format!("http://localhost:8500/v1/kv/{}", key);
-        let url = Url::parse(&address).unwrap();
+        let mut get_resp = reqwest::get(&address)?;
 
-        let mut get_resp = reqwest::get(url)?;
         let modify_index = if get_resp.status().as_u16() == 404 {
             0
         } else {
@@ -204,9 +196,8 @@ fn import<R: BufRead>(mut reader: R, fname: String) -> anyhow::Result<()> {
         };
 
         let address = format!("http://localhost:8500/v1/kv/{}?cas={}", key, modify_index);
-        let url = Url::parse(&address).unwrap();
-        let set_resp = reqwest::Client::new()
-            .put(url)
+        let _set_resp = reqwest::Client::new()
+            .put(&address)
             .body(value)
             .send()?;
         if modify_index == 0 {
