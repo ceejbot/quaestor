@@ -3,6 +3,9 @@ use reqwest::Url;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io;
+use std::io::{ BufRead, BufReader };
 use structopt::StructOpt;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -156,6 +159,9 @@ fn emit_level(item: KeyPair, level: i8, key: String) {
     }
 }
 
+#[derive(Deserialize, Serialize, Debug)]
+struct Entry(HashMap<String, String>);
+
 fn export() -> anyhow::Result<()> {
     let values: Vec<ConsulValue> = reqwest::get("http://localhost:8500/v1/kv/?recurse=true")?.json()?;
 
@@ -176,11 +182,46 @@ fn export() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn import(_fpath: &str) -> anyhow::Result<()> {
+fn import<R: BufRead>(mut reader: R, fname: String) -> anyhow::Result<()> {
+    let mut count_new = 0;
+    let mut count_replace = 0;
+
+    let mut data = Vec::new();
+    reader.read_to_end(&mut data)?;
+    let content = std::str::from_utf8(&data)?;
+    let imports: Entry = serde_json::from_str(content)?;
+
+    for (key, value) in imports.0 {
+        let address = format!("http://localhost:8500/v1/kv/{}", key);
+        let url = Url::parse(&address).unwrap();
+
+        let mut get_resp = reqwest::get(url)?;
+        let modify_index = if get_resp.status().as_u16() == 404 {
+            0
+        } else {
+            let mut values: Vec<ConsulValue> = get_resp.json()?;
+            values.pop().unwrap().ModifyIndex
+        };
+
+        let address = format!("http://localhost:8500/v1/kv/{}?cas={}", key, modify_index);
+        let url = Url::parse(&address).unwrap();
+        let set_resp = reqwest::Client::new()
+            .put(url)
+            .body(value)
+            .send()?;
+        if modify_index == 0 {
+            count_new += 1;
+        } else {
+            count_replace += 1;
+        }
+    }
+
+    println!("Finished import from {}.\nAdded {} value(s); updated {} value(s)", fname.bold(), count_new, count_replace);
+
     Ok(())
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let opts = Commands::from_args();
 
     let res = match opts {
@@ -189,12 +230,21 @@ fn main() {
         Commands::Rm { key } => remove(&key),
         Commands::Dir { prefix } => dir(&prefix),
         Commands::Export { } => export(),
-        Commands::Import { fpath } => import(&fpath),
+        Commands::Import { fpath } => {
+
+            if fpath == "-" {
+                import(BufReader::new(io::stdin()), "<stdin>".to_string())
+            } else {
+                let file = File::open(&fpath)?;
+                let reader = BufReader::new(file);
+                import(reader, fpath)
+            }
+        },
     };
 
     ::std::process::exit(match res {
         Err(e) => {
-            eprintln!("‼️ error: {:?}", e);
+            eprintln!("‼️ fatal error: {:?}", e);
             1
         },
         Ok(_) => 0,
