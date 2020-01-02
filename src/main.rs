@@ -28,12 +28,16 @@ enum Commands {
     Get {
         key: String,
     },
+    #[structopt(help = "quaestor rm key\n    remove a key")]
+    Rm {
+        key: String
+    },
     #[structopt(help = "quaestor dir prefix\n    recursively get a key and all values that start with that prefix")]
     Dir {
         prefix: String,
     },
-    #[structopt(help = "quaestor dump\n    emit all values in the database to json; use with care")]
-    Dump {
+    #[structopt(help = "quaestor export\n    emit all values in the database to json; use with care")]
+    Export {
     },
     #[structopt(help = "quaestor import filepath\n    import key/value pairs from a JSON file")]
     Import {
@@ -77,6 +81,10 @@ fn set(key: &str, value: &str) -> anyhow::Result<()> {
         },
     }
 
+    Ok(())
+}
+
+fn remove(key: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
@@ -135,7 +143,7 @@ fn emit_level(item: &HashMap<String, KeyPair>, level: usize) {
     }
 }
 
-fn dump() -> anyhow::Result<()> {
+fn export() -> anyhow::Result<()> {
     let values: Vec<ConsulValue> = reqwest::get("http://localhost:8500/v1/kv/?recurse=true")?.json()?;
 
     let mut result: HashMap<String, String> = HashMap::new();
@@ -165,8 +173,9 @@ fn main() {
     let res = match opts {
         Commands::Get { key }=> get(&key),
         Commands::Set { key, value  } => set(&key, &value),
+        Commands::Rm { key } => remove(&key),
         Commands::Dir { prefix } => dir(&prefix),
-        Commands::Dump { } => dump(),
+        Commands::Export { } => export(),
         Commands::Import { fpath } => import(&fpath),
     };
 
