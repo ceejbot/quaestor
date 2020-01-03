@@ -59,7 +59,7 @@ fn get(key: &str) -> anyhow::Result<()> {
                 println!("‼️  {} not found!", key.red());
             }
         },
-        Err(e) => { eprintln!("‼️ error: {:?}", e); },
+        Err(e) => { eprintln!("‼️  error: {:?}", e); },
     }
     Ok(())
 }
@@ -207,7 +207,17 @@ fn import<R: BufRead>(mut reader: R, fname: String) -> anyhow::Result<()> {
         }
     }
 
-    println!("Finished import from {}.\nAdded {} value(s); updated {} value(s)", fname.bold(), count_new, count_replace);
+    println!("Finished import from {}.", fname.bold());
+    if count_new == 1 {
+        println!("Added 1 new value.");
+    } else if count_new > 1 {
+        println!("Added {} new values.", count_new);
+    }
+    if count_replace == 1 {
+        println!("Updated 1 value.");
+    } else if count_replace > 1 {
+        println!("Updated {} values.", count_replace);
+    }
 
     Ok(())
 }
@@ -235,7 +245,7 @@ fn main() -> anyhow::Result<()> {
 
     ::std::process::exit(match res {
         Err(e) => {
-            eprintln!("‼️ fatal error: {:?}", e);
+            eprintln!("‼️  fatal error: {:?}", e);
             1
         },
         Ok(_) => 0,
