@@ -2,6 +2,7 @@ use colored::*;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::env;
 use std::fs::File;
 use std::io;
 use std::io::{ BufRead, BufReader };
@@ -47,8 +48,16 @@ enum Commands {
     },
 }
 
+fn base_url() -> String {
+    let key = "CONSUL_HTTP_ADDR";
+    match env::var(key) {
+        Ok(v) => format!("{}/v1/kv/", v),
+        Err(_) => "http://localhost:8500/v1/kv/".to_string()
+    }
+}
+
 fn get(key: &str) -> anyhow::Result<()> {
-    let address = format!("http://localhost:8500/v1/kv/{}?raw=true", key);
+    let address = format!("{}{}?raw=true", base_url(), key);
     let result = reqwest::get(&address)?.text();
 
     match result {
@@ -65,7 +74,7 @@ fn get(key: &str) -> anyhow::Result<()> {
 }
 
 fn set(key: &str, value: &str) -> anyhow::Result<()> {
-    let address = format!("http://localhost:8500/v1/kv/{}", key);
+    let address = format!("{}{}", base_url(), key);
     let response = reqwest::Client::new()
         .put(&address)
         .body(String::from(value))
@@ -84,7 +93,7 @@ fn set(key: &str, value: &str) -> anyhow::Result<()> {
 }
 
 fn remove(key: &str) -> anyhow::Result<()> {
-    let address = format!("http://localhost:8500/v1/kv/{}", key);
+    let address = format!("{}{}", base_url(), key);
     let response = reqwest::Client::new()
         .delete(&address)
         .send()?;
@@ -108,7 +117,7 @@ struct KeyPair {
 }
 
 fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
-    let address = format!("http://localhost:8500/v1/kv/{}?recurse=true", prefix);
+    let address = format!("{}{}?recurse=true", base_url(), prefix);
     let values: Vec<ConsulValue> = reqwest::get(&address)?.json()?;
 
     // let's do this the stupidest possible way.
@@ -156,7 +165,8 @@ fn emit_level(item: KeyPair, level: i8, key: String) {
 struct Entry(HashMap<String, String>);
 
 fn export() -> anyhow::Result<()> {
-    let values: Vec<ConsulValue> = reqwest::get("http://localhost:8500/v1/kv/?recurse=true")?.json()?;
+    let address = format!("{}?recurse=true", base_url());
+    let values: Vec<ConsulValue> = reqwest::get(&address)?.json()?;
 
     let mut result: HashMap<String, String> = HashMap::new();
     for v in &values {
@@ -185,7 +195,7 @@ fn import<R: BufRead>(mut reader: R, fname: String) -> anyhow::Result<()> {
     let imports: Entry = serde_json::from_str(content)?;
 
     for (key, value) in imports.0 {
-        let address = format!("http://localhost:8500/v1/kv/{}", key);
+        let address = format!("{}{}", base_url(), key);
         let mut get_resp = reqwest::get(&address)?;
 
         let modify_index = if get_resp.status().as_u16() == 404 {
@@ -195,7 +205,7 @@ fn import<R: BufRead>(mut reader: R, fname: String) -> anyhow::Result<()> {
             values.pop().unwrap().ModifyIndex
         };
 
-        let address = format!("http://localhost:8500/v1/kv/{}?cas={}", key, modify_index);
+        let address = format!("{}{}?cas={}", base_url(), key, modify_index);
         let _set_resp = reqwest::Client::new()
             .put(&address)
             .body(value)
