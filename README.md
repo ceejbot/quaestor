@@ -15,12 +15,14 @@ Commands:
 
 ## TODO
 
-* Make the tool more forgiving about trailing slashes on CONSUL_HTTP_ADDR.
+* Make the tool more forgiving about trailing slashes on `CONSUL_HTTP_ADDR`.
 * Better usage examples and help text.
+* `--quiet` command-line switch, with `-q` as shorter alias.
 
 Stretch goals:
 
 * `quaestor mirror <dburl>` - mirror the contents of an existing consul
+* Pull http layer out of display layer to make a json output mode easier if needed.
 
 ## LICENSE
 

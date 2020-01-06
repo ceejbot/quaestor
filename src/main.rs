@@ -20,29 +20,41 @@ struct ConsulValue {
 }
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "quaestor")]
+#[structopt(name = "quaestor", about = "Set and inspect values stored in consul's key/value store.\nKeys are treated as directory paths with / as a separator.")]
 enum Commands {
-    #[structopt(help = "quaestor set key value\n    set a key")]
+    #[structopt(about = "set a key to the given value",
+        help = "quaestor set <key> <value>\nSet or update the given key. Examples:\nquae set foo bar\nquae set service/environment/NODE_ENV production"
+    )]
     Set {
         key: String,
         value: String,
     },
-    #[structopt(help = "quaestor get key\n    get a key")]
+    #[structopt(about = "show a key's value",
+        help = "quaestor get <key>\nShow the value of the given key, decoding from base64."
+    )]
     Get {
         key: String,
     },
-    #[structopt(help = "quaestor rm key\n    remove a key")]
+    #[structopt(about = "remove a key",
+        help = "quaestor rm <key>\nRemove the key from consul."
+    )]
     Rm {
         key: String
     },
-    #[structopt(help = "quaestor dir prefix\n    recursively get a key and all values that start with that prefix")]
+    #[structopt(about = "show all keys that start with a prefix",
+        help = "quaestor dir <prefix>\nrecursively display all values for keys that start with the given prefix, using / as a path separator"
+    )]
     Dir {
         prefix: String,
     },
-    #[structopt(help = "quaestor export\n    emit all values in the database to json; use with care")]
+    #[structopt(about = "emit all values in consul as json",
+        help = "quaestor export\nrEmit all values in the database as json to stdout. The output structure is a flat object with keys as fields."
+    )]
     Export {
     },
-    #[structopt(help = "quaestor import filepath\n    import key/value pairs from a JSON file")]
+    #[structopt(about = "import key/value pairs from json",
+        help = "quaestor import <filepath>\nImport key/value pairs from the given file. Uses stdin if you pass - as the filename.\nThe json must be a flat object with string fields and values, not an array or a nested object."
+    )]
     Import {
         fpath: String
     },
