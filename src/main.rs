@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io;
 use std::io::{ BufRead, BufReader };
 use structopt::StructOpt;
+use structopt::clap::AppSettings::*;
 
 #[derive(Deserialize, Debug, Clone)]
 #[allow(non_snake_case)]
@@ -21,39 +22,46 @@ struct ConsulValue {
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "quaestor", about = "Set and inspect values stored in consul's key/value store.\nKeys are treated as directory paths with / as a separator.")]
+#[structopt(global_setting(ColoredHelp))]
 enum Commands {
     #[structopt(about = "set a key to the given value",
-        help = "quaestor set <key> <value>\nSet or update the given key. Examples:\nquae set foo bar\nquae set service/environment/NODE_ENV production"
+        help = "quaestor set <key> <value>\nSet or update the given key. Examples:\nquae set foo bar\nquae set service/environment/NODE_ENV production",
+        setting(ColorAuto), setting(ColoredHelp)
     )]
     Set {
         key: String,
         value: String,
     },
     #[structopt(about = "show a key's value",
-        help = "quaestor get <key>\nShow the value of the given key, decoding from base64."
+        help = "quaestor get <key>\nShow the value of the given key, decoding from base64.",
+        setting(ColorAuto), setting(ColoredHelp)
     )]
     Get {
         key: String,
     },
     #[structopt(about = "remove a key",
-        help = "quaestor rm <key>\nRemove the key from consul."
+        help = "quaestor rm <key>\nRemove the key from consul.",
+        setting(ColorAuto), setting(ColoredHelp)
     )]
     Rm {
         key: String
     },
     #[structopt(about = "show all keys that start with a prefix",
-        help = "quaestor dir <prefix>\nrecursively display all values for keys that start with the given prefix, using / as a path separator"
+        help = "quaestor dir <prefix>\nrecursively display all values for keys that start with the given prefix, using / as a path separator",
+        setting(ColorAuto), setting(ColoredHelp)
     )]
     Dir {
         prefix: String,
     },
     #[structopt(about = "emit all values in consul as json",
-        help = "quaestor export\nrEmit all values in the database as json to stdout. The output structure is a flat object with keys as fields."
+        help = "quaestor export\nrEmit all values in the database as json to stdout. The output structure is a flat object with keys as fields.",
+        setting(ColorAuto), setting(ColoredHelp)
     )]
     Export {
     },
     #[structopt(about = "import key/value pairs from json",
-        help = "quaestor import <filepath>\nImport key/value pairs from the given file. Uses stdin if you pass - as the filename.\nThe json must be a flat object with string fields and values, not an array or a nested object."
+        help = "quaestor import <filepath>\nImport key/value pairs from the given file. Uses stdin if you pass - as the filename.\nThe json must be a flat object with string fields and values, not an array or a nested object.",
+        setting(ColorAuto), setting(ColoredHelp)
     )]
     Import {
         fpath: String
