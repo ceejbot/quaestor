@@ -1,6 +1,5 @@
 use colored::*;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
@@ -18,6 +17,15 @@ struct ConsulValue {
     LockIndex: u32,
     ModifyIndex: u32,
     Value: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct Entry(HashMap<String, String>);
+
+#[derive(Serialize, Debug, Default)]
+struct Node {
+    value: Option<String>,
+    child: HashMap<String, Node>
 }
 
 #[derive(StructOpt, Debug)]
@@ -78,35 +86,29 @@ fn base_url() -> String {
 
 fn get(key: &str) -> anyhow::Result<()> {
     let address = format!("{}{}?raw=true", base_url(), key);
-    let result = reqwest::get(&address)?.text();
+    let result = ureq::get(&address).call();
 
-    match result {
-        Ok(v) => {
-            if v.len() > 0 {
-                println!("{} = {}", key.blue(), v.green());
-            } else {
-                println!("‼️  {} not found!", key.red());
-            }
-        },
-        Err(e) => { eprintln!("‼️  error: {:?}", e); },
+    if result.ok() {
+        let v = result.into_string().unwrap();
+        println!("{} = {}", key.blue(), v.green());
+    } else if result.status() == 404 {
+        println!("⁇  {} not found", key.red());
+    } else if result.error() {
+        eprintln!("‼️  unexpected response: {}", result.status())
     }
+
     Ok(())
 }
 
 fn set(key: &str, value: &str) -> anyhow::Result<()> {
     let address = format!("{}{}", base_url(), key);
-    let response = reqwest::Client::new()
-        .put(&address)
-        .body(String::from(value))
-        .send()?;
+    let result = ureq::put(&address)
+        .send_string(&value);
 
-    match response.error_for_status() {
-        Ok(_res) => {
-            println!("✔️ {} ➜ {}", key.blue(), value.green());
-        },
-        Err(e) => {
-            println!("‼️ failed to set {}! {:?}", key.blue(), e);
-        },
+    if result.ok() {
+        println!("✔️  {} ➜ {}", key.blue(), value.green());
+    } else {
+        println!("‼️ failed to set {}! response status {}", key.blue(), result.status());
     }
 
     Ok(())
@@ -114,35 +116,36 @@ fn set(key: &str, value: &str) -> anyhow::Result<()> {
 
 fn remove(key: &str) -> anyhow::Result<()> {
     let address = format!("{}{}", base_url(), key);
-    let response = reqwest::Client::new()
-        .delete(&address)
-        .send()?;
+    let result = ureq::delete(&address).call();
 
-    match response.error_for_status() {
-        Ok(_res) => {
-            println!("✘ {} removed", key.red());
-        },
-        Err(e) => {
-            println!("‼️ failed to remove {}! {:?}", key.blue(), e);
-        },
+    if result.ok() {
+        println!("✘ {} removed", key.red());
+    } else {
+        println!("‼️ failed to remove {}! response status {}", key.blue(), result.status());
     }
 
     Ok(())
 }
 
-#[derive(Serialize, Debug, Default)]
-struct KeyPair {
-    value: Option<String>,
-    child: HashMap<String, KeyPair>
-}
-
-fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
+fn dir(prefix: &str) -> anyhow::Result<()> {
     let address = format!("{}{}?recurse=true", base_url(), prefix);
-    let values: Vec<ConsulValue> = reqwest::get(&address)?.json()?;
+    let result = ureq::get(&address)
+        .set("Content-Type", "application/json")
+        .call();
 
-    // let's do this the stupidest possible way.
-    let mut result = KeyPair::default();
+    if !result.ok() {
+        if result.status() == 404 {
+            println!("⁇  {} not found", prefix.blue());
+        } else {
+            println!("cannot show {}: response status={}", prefix.blue(), result.status());
+        }
+        return Ok(())
+    }
 
+    let reader = result.into_reader();
+    let values: Vec<ConsulValue> = serde_json::from_reader(reader)?;
+
+    let mut result = Node::default();
     for v in &values {
         let bytes = match base64::decode(&v.Value) {
             Err(_) => continue,
@@ -151,17 +154,17 @@ fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
 
         let decoded = std::str::from_utf8(&bytes)?.to_string();
 
-        let mut segments: Vec<_> = v.Key.split("/").map(str::to_string).collect();
+        let mut segments: Vec<_> = v.Key.split('/').map(str::to_string).collect();
         segments.reverse();
 
         let mut current = &mut result;
 
         while segments.len() > 1 {
             let level = segments.pop().unwrap();
-            let tmp = current.child.entry(level).or_insert(KeyPair::default());
+            let tmp = current.child.entry(level).or_insert_with(Node::default);
             current = tmp;
         }
-        let terminal = current.child.entry(segments.pop().unwrap()).or_insert(KeyPair::default());
+        let terminal = current.child.entry(segments.pop().unwrap()).or_insert_with(Node::default);
         terminal.value = Some(decoded);
     }
 
@@ -169,10 +172,10 @@ fn dir<'a>(prefix: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn emit_level(item: KeyPair, level: i8, key: String) {
+fn emit_level(item: Node, level: i8, key: String) {
     if let Some(val) = item.value {
         println!("{:width$}{}: {}", "", key.blue(), val.green(), width = level as usize * 4);
-    } else if key.len() > 0 {
+    } else if !key.is_empty() {
         println!("{:width$}{}:", "", key, width = level as usize * 4);
     }
 
@@ -181,12 +184,19 @@ fn emit_level(item: KeyPair, level: i8, key: String) {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-struct Entry(HashMap<String, String>);
-
 fn export() -> anyhow::Result<()> {
     let address = format!("{}?recurse=true", base_url());
-    let values: Vec<ConsulValue> = reqwest::get(&address)?.json()?;
+    let result = ureq::get(&address)
+        .set("Content-Type", "application/json")
+        .call();
+
+    if !result.ok() {
+        println!("export failed: response status={}", result.status());
+        return Ok(())
+    }
+
+    let reader = result.into_reader();
+    let values: Vec<ConsulValue> = serde_json::from_reader(reader)?;
 
     let mut result: HashMap<String, String> = HashMap::new();
     for v in &values {
@@ -216,20 +226,18 @@ fn import<R: BufRead>(mut reader: R, fname: String) -> anyhow::Result<()> {
 
     for (key, value) in imports.0 {
         let address = format!("{}{}", base_url(), key);
-        let mut get_resp = reqwest::get(&address)?;
+        let get_resp = ureq::get(&address).call();
 
-        let modify_index = if get_resp.status().as_u16() == 404 {
+        let modify_index = if get_resp.status() == 404 {
             0
         } else {
-            let mut values: Vec<ConsulValue> = get_resp.json()?;
+            let mut values: Vec<ConsulValue> = serde_json::from_reader(get_resp.into_reader())?;
             values.pop().unwrap().ModifyIndex
         };
 
         let address = format!("{}{}?cas={}", base_url(), key, modify_index);
-        let _set_resp = reqwest::Client::new()
-            .put(&address)
-            .body(value)
-            .send()?;
+        // well, we really should hork if we fail here
+        ureq::put(&address).send_string(&value);
         if modify_index == 0 {
             count_new += 1;
         } else {
